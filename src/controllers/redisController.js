@@ -462,7 +462,131 @@ const zsetDemo = async (req, res) => {
     // get player rank
     const rahulRank = await redis.zrevrank("leaderboard:global", "Rahul");
     results.rahulRank = rahulRank + 1; // 0 based to 1-based
+
+    // get player score
+    results.rahulScore = await redis.zscore("leaderboard:global", "Rahul");
+
+    // update score (add 20 points)
+    await redis.zincrby("leaderboard:global", 20, "Rahul");
+    results.rahulScore = await redis.zscore("leaderboard:global", "Rahul");
+
+    // all players with score
+    const allPlayers = await redis.zrevrange(
+      "leaderboard:global",
+      0,
+      -1,
+      "WITHSCORES",
+    );
+
+    results.allPlayers = [];
+
+    for (let i = 0; i < allPlayers.length; i += 2) {
+      results.allPlayers.push({
+        rank: Math.floor(i / 2) + 1,
+        player: allPlayers[i],
+        score: parseInt(allPlayers[i + 1]),
+      });
+    }
+
+    // 2. priority queue tasks
+    await redis.zadd(
+      "priority:tasks",
+      1,
+      "task:low:cleanup",
+      5,
+      "task:medium:report",
+      10,
+      "task:high:payment",
+      10,
+      "task:high:security",
+      3,
+      "task:low:update",
+    );
+
+    // get highest priority tasks first
+    const highPriority = await redis.zrevrange(
+      "priority:tasks",
+      0,
+      1,
+      "WITHSCORES",
+    );
+    results.highPriorityTasks = [];
+    for (let i = 0; i < highPriority.length; i += 2) {
+      results.highPriorityTasks.push({
+        tasks: highPriority[i],
+        priority: parseInt(highPriority[i + 1]),
+      });
+    }
+
+    // 3. Trending products - score = view count
+    await redis.zadd(
+      "trending:products",
+      1500,
+      "macbook pro",
+      3200,
+      "iphone 15",
+      800,
+      "ipad",
+      2100,
+      "airpods pro",
+      450,
+      "apple watch",
+    );
+    // top 3 trending
+    const trending = await redis.zrevrange(
+      "trending:products",
+      0,
+      2,
+      "WITHSCORES",
+    );
+    results.trending = [];
+
+    for (let i = 0; i < trending.length; i += 2) {
+      results.trending.push({
+        product: trending[i],
+        views: parseInt(trending[i + 1]),
+      });
+    }
+
+    // products with veiws between 1000 and 3000
+    const midRange = await redis.zrangebyscore(
+      "trending:products",
+      1000,
+      3000,
+      "WITHSCORES",
+    );
+    results.midRangeProducts = [];
+
+    for (let i = 0; i < midRange.length; i += 2) {
+      results.midRangeProducts.push({
+        product: midRange[i],
+        views: parseInt(midRange[i + 1]),
+      });
+    }
+
+    // count products with > 1000 views
+    results.popularProductCount = await redis.zcount(
+      "trending:products",
+      1000,
+      "+inf",
+    );
+
+    // total entries
+    results.totalEntries = await redis.zcard("leaderboard:global");
+
+    res.status(200).json({
+      success: true,
+      message: "Sorted Set (ZSet) operations demo",
+      useCases: {
+        leaderboard: "game scores, user ranking",
+        priorityQueue: "task scheduling by priority",
+        trending: "trending content, hot topics",
+        rateLimit: "sliding window rate limit (will see direct in project)",
+        timeSeries: "score = timestamp for time-ordered data",
+      },
+      results,
+    });
   } catch (error) {}
 };
 
-module.exports = { stringDemo, hashDemo, listDemo, setDemo };
+module.exports = { stringDemo, hashDemo, listDemo, setDemo, zsetDemo };
